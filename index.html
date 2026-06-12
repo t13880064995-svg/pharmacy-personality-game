@@ -1,0 +1,108 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>顾客人格解锁：今天药房来了谁？</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-orb orb-a"></div>
+  <div class="bg-orb orb-b"></div>
+  <div class="bg-orb orb-c"></div>
+
+  <main id="loginPage" class="login-page">
+    <section class="login-card pop-in">
+      <div class="login-badge">💊 AI互动小游戏</div>
+      <h1>顾客人格解锁：今天药房来了谁？</h1>
+      <p>每天解锁一个顾客人格，快来测测吧！</p>
+      <label for="playerName">请输入你的姓名</label>
+      <input id="playerName" maxlength="12" autocomplete="name" placeholder="例如：王芳" />
+      <button id="startBtn" class="primary-btn">🚀 开始解锁</button>
+      <div id="loginTip" class="login-tip">姓名不能为空，排行榜会显示真实玩家姓名。</div>
+    </section>
+  </main>
+
+  <main id="gamePage" class="game-page hidden">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">微信小游戏 × 人格测试 × 药房服务洞察</div>
+        <h2>🧠 AI顾客读心术训练营</h2>
+        <p>通过游戏化方式培养员工对顾客行为的观察力和洞察力。</p>
+      </div>
+      <div class="player-panel">
+        <div>👤 <span id="currentName">玩家</span></div>
+        <div>🏆 <span id="score">0</span> 分</div>
+        <div>🔥 <span id="streak">0</span> 连胜</div>
+      </div>
+    </header>
+
+    <section class="dashboard">
+      <aside class="panel customer-zone">
+        <div class="panel-head">
+          <h3>🎭 今日顾客</h3>
+          <span id="difficultyPill" class="difficulty-pill">待解锁</span>
+        </div>
+        <div id="customerCard" class="customer-empty">
+          <div class="empty-avatar">🎁</div>
+          <h4>还没有顾客进店</h4>
+          <p>点击下方按钮，随机解锁一位真实药房场景顾客。</p>
+        </div>
+        <button id="generateBtn" class="generate-btn">🎲 生成今日顾客</button>
+      </aside>
+
+      <section class="panel quiz-zone">
+        <div class="quiz-glow"></div>
+        <div class="panel-head center-head">
+          <h3>📝 你能识别他吗？</h3>
+          <span id="roundCount">第 0 题</span>
+        </div>
+        <p class="question">你认为这位顾客属于哪种人格？</p>
+        <div id="options" class="options locked">
+          <div class="lock-state">先生成今日顾客，再开始判断人格。</div>
+        </div>
+        <div id="answerResult" class="answer-result hidden"></div>
+      </section>
+
+      <aside class="panel leaderboard-zone">
+        <div class="panel-head">
+          <h3>🏆 顾客人格排行榜</h3>
+          <span>真实玩家</span>
+        </div>
+        <div id="leaderboard" class="leaderboard"></div>
+      </aside>
+    </section>
+
+    <section class="learning-area">
+      <section class="panel analysis-zone reveal-card">
+        <div class="section-title">
+          <span>🧠</span>
+          <div>
+            <h3>AI顾客人格解析</h3>
+            <p>像公布答案一样，看懂顾客行为背后的真实动机。</p>
+          </div>
+        </div>
+        <div id="analysisContent" class="content-grid placeholder-grid">
+          <div class="placeholder">完成答题后解锁真实人格类型、识别依据和误判原因。</div>
+        </div>
+      </section>
+
+      <section class="panel master-zone reveal-card">
+        <div class="section-title">
+          <span>🎓</span>
+          <div>
+            <h3>店长高手这样接</h3>
+            <p>像秘籍卡片一样，学习高手的开场、提问、会员和成交策略。</p>
+          </div>
+        </div>
+        <div id="masterContent" class="secret-grid placeholder-grid">
+          <div class="placeholder">答题后自动出现店长高手接待秘籍。</div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
