@@ -63,3 +63,4 @@ export const firebaseConfig = {
 ```
 
 配置完成后，页面会显示在线排行榜已连接。
+
