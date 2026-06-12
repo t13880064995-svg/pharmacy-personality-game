@@ -302,6 +302,18 @@ async function pushStats(stats) {
   await set(ref(db, `players/${state.playerId}`), payload);
 }
 
+async function syncStatsSafely(stats) {
+  try {
+    await pushStats(stats);
+  } catch (error) {
+    console.error(error);
+    saveLocal(stats);
+    state.online = false;
+    $("onlineStatus").textContent = "本机记录";
+    showToast("在线排行榜暂时未连接，本次成绩已保存在本机。", true);
+  }
+}
+
 function saveLocal(stats) {
   localStorage.setItem("pg_stats", JSON.stringify(stats));
   localStorage.setItem("pg_player_name", state.playerName);
@@ -538,10 +550,10 @@ async function answer(button) {
     showToast("别急，高手也是从误判中练出来的。");
   }
 
-  await pushStats(stats);
-  renderLeaderboard(true);
   renderAnalysis(state.current);
   renderMaster(state.current);
+  renderLeaderboard(true);
+  await syncStatsSafely(stats);
 }
 
 function resetLearningArea() {
@@ -605,7 +617,7 @@ async function startGame() {
   $("loginPage").classList.add("hidden");
   $("gamePage").classList.remove("hidden");
   const stats = getStats();
-  await pushStats(stats);
+  await syncStatsSafely(stats);
   renderLeaderboard();
   showToast(`${name}，欢迎代表 ${store} 解锁顾客人格！`);
 }
@@ -637,6 +649,8 @@ async function boot() {
 }
 
 boot();
+
+
 
 
 

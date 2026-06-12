@@ -17,3 +17,4 @@ export const firebaseReady =
   !firebaseConfig.appId.includes("PASTE_") &&
   !firebaseConfig.databaseURL.includes("PASTE_");
 
+
