@@ -18,8 +18,11 @@
       <p>每天解锁一个顾客人格，快来测测吧！</p>
       <label for="playerName">请输入你的姓名</label>
       <input id="playerName" maxlength="12" autocomplete="name" placeholder="例如：王芳" />
+      <label for="storeName">请输入你的门店</label>
+      <input id="storeName" maxlength="20" placeholder="例如：北京丰桥路店" />
       <button id="startBtn" class="primary-btn">🚀 开始解锁</button>
-      <div id="loginTip" class="login-tip">姓名不能为空，排行榜会显示真实玩家姓名。</div>
+      <div id="loginTip" class="login-tip">姓名和门店不能为空，排行榜会显示真实玩家姓名。</div>
+      <div id="firebaseStatus" class="firebase-status">正在检查在线排行榜配置...</div>
     </section>
   </main>
 
@@ -69,6 +72,12 @@
           <h3>🏆 顾客人格排行榜</h3>
           <span>真实玩家</span>
         </div>
+        <div class="board-tabs">
+          <button class="board-tab active" data-board="score">个人榜</button>
+          <button class="board-tab" data-board="streak">连胜榜</button>
+          <button class="board-tab" data-board="accuracy">正确率榜</button>
+          <button class="board-tab" data-board="store">门店榜</button>
+        </div>
         <div id="leaderboard" class="leaderboard"></div>
       </aside>
     </section>
@@ -103,6 +112,7 @@
   </main>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
+

@@ -1,0 +1,22 @@
+﻿{
+  "rules": {
+    "players": {
+      ".read": true,
+      "$playerId": {
+        ".write": "newData.child('playerId').val() === $playerId",
+        "playerId": { ".validate": "newData.isString()" },
+        "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20" },
+        "store": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 30" },
+        "score": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "attempts": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "correct": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "correctRate": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+        "streak": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "bestStreak": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "title": { ".validate": "newData.isString()" },
+        "updatedAtMs": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

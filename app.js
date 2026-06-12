@@ -1,4 +1,6 @@
-﻿const $ = (id) => document.getElementById(id);
+﻿import { firebaseConfig, firebaseReady } from "./firebase-config.js";
+
+const $ = (id) => document.getElementById(id);
 
 const typeMeta = {
   "价格敏感型": {
@@ -168,100 +170,257 @@ const rawCustomers = [
 "🌞|晴姨|56|买日常营养品|我每天散步、泡脚，还想补充点基础的。|生活规律/喜欢健康仪式感/容易接受长期计划/不喜欢夸张承诺|乐观|养生达人型|普通顾客"
 ];
 
+
+
+
+function createPlayerId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+  return `player_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+let databaseApi = null;
+let db = null;
+let unsubscribePlayers = null;
+let onlinePlayers = [];
+let activeBoard = "score";
+
 const customers = rawCustomers.map((row) => {
   const [avatar, name, age, purpose, line, traitText, mood, type, difficulty] = row.split("|");
   return { avatar, name, age, purpose, line, traits: traitText.split("/"), mood, type, difficulty };
 });
 
 const state = {
+  playerId: localStorage.getItem("pg_player_id") || createPlayerId(),
   playerName: localStorage.getItem("pg_player_name") || "",
+  storeName: localStorage.getItem("pg_store_name") || "",
   current: null,
   answered: false,
-  lastCustomerName: ""
+  lastCustomerName: "",
+  online: false
 };
+localStorage.setItem("pg_player_id", state.playerId);
+
+function defaultStats() {
+  return {
+    playerId: state.playerId,
+    name: state.playerName,
+    store: state.storeName,
+    score: 0,
+    attempts: 0,
+    correct: 0,
+    correctRate: 0,
+    streak: 0,
+    bestStreak: 0,
+    title: "新手观察员",
+    history: [],
+    updatedAtMs: Date.now()
+  };
+}
 
 function getStats() {
-  const defaultStats = { name: state.playerName, score: 0, attempts: 0, correct: 0, streak: 0, bestStreak: 0, history: [] };
   try {
-    return { ...defaultStats, ...JSON.parse(localStorage.getItem("pg_stats") || "{}"), name: state.playerName };
+    const saved = JSON.parse(localStorage.getItem("pg_stats") || "{}");
+    return normalizeStats({ ...defaultStats(), ...saved, name: state.playerName, store: state.storeName, playerId: state.playerId });
   } catch {
-    return defaultStats;
+    return defaultStats();
   }
 }
 
-function saveStats(stats) {
+function normalizeStats(stats) {
+  stats.attempts = Number(stats.attempts || 0);
+  stats.correct = Number(stats.correct || 0);
+  stats.score = Number(stats.score || 0);
+  stats.streak = Number(stats.streak || 0);
+  stats.bestStreak = Number(stats.bestStreak || 0);
+  stats.correctRate = stats.attempts ? Math.round((stats.correct / stats.attempts) * 100) : 0;
+  stats.title = titleFor(stats);
+  stats.updatedAtMs = Date.now();
+  return stats;
+}
+
+function titleFor(stats) {
+  if (stats.score >= 500 && stats.correctRate >= 85) return "顾客读心王";
+  if (stats.bestStreak >= 10) return "连胜战神";
+  if (stats.correctRate >= 90 && stats.attempts >= 10) return "精准洞察师";
+  if (stats.score >= 220) return "金牌服务官";
+  if (stats.score >= 120) return "门店洞察达人";
+  if (stats.attempts >= 5) return "顾客观察员";
+  return "新手观察员";
+}
+
+async function initFirebase() {
+  const status = $("firebaseStatus");
+  const onlineStatus = $("onlineStatus");
+  if (!firebaseReady) {
+    status.textContent = "未配置 Firebase Realtime Database：当前为本机体验，配置后即可多人在线排行。";
+    onlineStatus.textContent = "未配置在线榜";
+    status.classList.add("warn");
+    renderLeaderboard();
+    return;
+  }
+  try {
+    const [{ initializeApp }, database] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js")
+    ]);
+    databaseApi = database;
+    const app = initializeApp(firebaseConfig);
+    db = database.getDatabase(app, firebaseConfig.databaseURL);
+    state.online = true;
+    status.textContent = "在线排行榜已连接，所有玩家成绩将实时同步。";
+    status.classList.add("ok");
+    onlineStatus.textContent = "实时刷新";
+    await pushStats(getStats());
+    subscribePlayers();
+  } catch (error) {
+    console.error(error);
+    status.textContent = "Firebase 连接失败：请检查 databaseURL、Realtime Database 是否创建、规则是否发布。";
+    status.classList.add("warn");
+    onlineStatus.textContent = "连接失败";
+    state.online = false;
+    renderLeaderboard();
+  }
+}
+
+async function pushStats(stats) {
+  saveLocal(stats);
+  if (!state.online || !db || !databaseApi || !state.playerName) return;
+  const { ref, set } = databaseApi;
+  const payload = {
+    playerId: stats.playerId,
+    name: stats.name,
+    store: stats.store,
+    score: stats.score,
+    attempts: stats.attempts,
+    correct: stats.correct,
+    correctRate: stats.correctRate,
+    streak: stats.streak,
+    bestStreak: stats.bestStreak,
+    title: stats.title,
+    updatedAtMs: Date.now()
+  };
+  await set(ref(db, `players/${state.playerId}`), payload);
+}
+
+function saveLocal(stats) {
   localStorage.setItem("pg_stats", JSON.stringify(stats));
-  if (state.playerName) localStorage.setItem("pg_player_name", state.playerName);
-  syncLeaderboard(stats);
+  localStorage.setItem("pg_player_name", state.playerName);
+  localStorage.setItem("pg_store_name", state.storeName);
   renderPlayer(stats);
 }
 
-function getBoard() {
-  try {
-    return JSON.parse(localStorage.getItem("pg_leaderboard") || "[]").filter(Boolean);
-  } catch {
-    return [];
-  }
+function subscribePlayers() {
+  if (!state.online || !db || !databaseApi) return;
+  if (unsubscribePlayers) unsubscribePlayers();
+  const { ref, onValue, off } = databaseApi;
+  const playersRef = ref(db, "players");
+  const listener = onValue(playersRef, (snapshot) => {
+    const value = snapshot.val() || {};
+    onlinePlayers = Object.entries(value).map(([id, data]) => normalizeRemote({ id, ...data }));
+    renderLeaderboard(true);
+  }, (error) => {
+    console.error(error);
+    $("onlineStatus").textContent = "刷新失败";
+    showToast("在线排行榜刷新失败，请检查 Realtime Database 规则。", true);
+  });
+  unsubscribePlayers = () => off(playersRef, "value", listener);
 }
 
-function syncLeaderboard(stats = getStats()) {
-  if (!state.playerName) return;
-  const board = getBoard().filter((item) => item && item.name);
-  const existing = board.find((item) => item.name === state.playerName);
-  const record = {
-    name: state.playerName,
-    score: stats.score || 0,
-    attempts: stats.attempts || 0,
-    correct: stats.correct || 0,
-    streak: stats.streak || 0,
-    bestStreak: stats.bestStreak || 0,
-    updatedAt: Date.now()
+function normalizeRemote(item) {
+  return {
+    id: item.id || item.playerId,
+    playerId: item.playerId || item.id,
+    name: item.name || "未命名玩家",
+    store: item.store || "未填写门店",
+    score: Number(item.score || 0),
+    attempts: Number(item.attempts || 0),
+    correct: Number(item.correct || 0),
+    correctRate: Number(item.correctRate || 0),
+    streak: Number(item.streak || 0),
+    bestStreak: Number(item.bestStreak || 0),
+    title: item.title || "新手观察员",
+    updatedAtMs: Number(item.updatedAtMs || 0)
   };
-  if (existing) Object.assign(existing, record);
-  else board.push(record);
-  board.sort((a, b) => b.score - a.score || accuracy(b) - accuracy(a) || b.bestStreak - a.bestStreak || b.updatedAt - a.updatedAt);
-  localStorage.setItem("pg_leaderboard", JSON.stringify(board.slice(0, 100)));
 }
 
-function accuracy(item) {
-  return item.attempts ? Math.round((item.correct / item.attempts) * 100) : 0;
+function fallbackPlayers() {
+  const stats = getStats();
+  if (!stats.name) return [];
+  return [normalizeRemote(stats)];
 }
 
-function showToast(message) {
-  const toast = $("toast");
-  toast.textContent = message;
-  toast.classList.add("show");
-  clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => toast.classList.remove("show"), 2200);
+function leaderboardRows() {
+  const rows = state.online ? onlinePlayers : fallbackPlayers();
+  if (activeBoard === "streak") {
+    return [...rows].sort((a, b) => b.bestStreak - a.bestStreak || b.streak - a.streak || b.score - a.score);
+  }
+  if (activeBoard === "accuracy") {
+    return [...rows].filter((x) => x.attempts > 0).sort((a, b) => b.correctRate - a.correctRate || b.correct - a.correct || b.score - a.score);
+  }
+  if (activeBoard === "store") {
+    const map = new Map();
+    rows.forEach((player) => {
+      const key = player.store || "未填写门店";
+      const item = map.get(key) || { store: key, score: 0, attempts: 0, correct: 0, players: 0, bestStreak: 0 };
+      item.score += player.score;
+      item.attempts += player.attempts;
+      item.correct += player.correct;
+      item.players += 1;
+      item.bestStreak = Math.max(item.bestStreak, player.bestStreak || 0);
+      map.set(key, item);
+    });
+    return [...map.values()].map((item) => ({
+      ...item,
+      name: item.store,
+      correctRate: item.attempts ? Math.round((item.correct / item.attempts) * 100) : 0,
+      title: `${item.players}人参赛`
+    })).sort((a, b) => b.score - a.score || b.correctRate - a.correctRate);
+  }
+  return [...rows].sort((a, b) => b.score - a.score || b.correctRate - a.correctRate || b.bestStreak - a.bestStreak);
 }
 
-function renderPlayer(stats = getStats()) {
-  $("currentName").textContent = state.playerName || "玩家";
-  $("score").textContent = stats.score || 0;
-  $("streak").textContent = stats.streak || 0;
-  $("roundCount").textContent = `第 ${stats.attempts || 0} 题`;
-}
-
-function renderLeaderboard() {
-  const board = getBoard().filter((item) => item && item.name);
+function renderLeaderboard(animated = false) {
   const box = $("leaderboard");
-  if (!board.length) {
-    box.innerHTML = `<div class="rank-empty">还没有真实玩家成绩。<br>完成第一题后，你的姓名和成绩会出现在这里。</div>`;
+  const rows = leaderboardRows();
+  if (!rows.length) {
+    box.innerHTML = `<div class="rank-empty">还没有真实玩家成绩。<br>完成第一题后，所有玩家会共享同一个在线排行榜。</div>`;
     return;
   }
-  box.innerHTML = board.slice(0, 12).map((item, index) => {
+  box.innerHTML = rows.slice(0, 20).map((item, index) => {
     const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index + 1;
-    const isMe = item.name === state.playerName;
+    const isMe = item.playerId === state.playerId || (activeBoard === "store" && item.name === state.storeName);
+    const sub = activeBoard === "store"
+      ? `正确率 ${item.correctRate}% · ${item.players || 0}人 · 最强 ${item.bestStreak || 0}连胜`
+      : `${escapeHtml(item.store || "未填写门店")} · ${item.title} · 正确率 ${item.correctRate}% · ${item.bestStreak || 0}连胜`;
     return `
-      <div class="rank-row ${isMe ? "me" : ""}">
+      <div class="rank-row ${isMe ? "me" : ""} ${animated ? "rank-refresh" : ""}">
         <div class="rank-num">${medal}</div>
         <div class="rank-main">
           <div class="rank-name"><span>${escapeHtml(item.name)}</span><strong>${item.score || 0}分</strong></div>
-          <div class="rank-stats">正确率 ${accuracy(item)}% · ${item.streak || 0}连胜 · 已答 ${item.attempts || 0}题</div>
+          <div class="rank-stats">${sub}</div>
         </div>
       </div>
     `;
   }).join("");
+}
+
+function renderPlayer(stats = getStats()) {
+  $("currentName").textContent = state.playerName || "玩家";
+  $("currentStore").textContent = state.storeName || "门店";
+  $("playerTitle").textContent = stats.title || "新手观察员";
+  $("score").textContent = stats.score || 0;
+  $("accuracy").textContent = `${stats.correctRate || 0}%`;
+  $("streak").textContent = stats.streak || 0;
+  $("roundCount").textContent = `第 ${stats.attempts || 0} 题`;
+}
+
+function showToast(message, warning = false) {
+  const toast = $("toast");
+  toast.textContent = message;
+  toast.classList.toggle("warning", warning);
+  toast.classList.add("show");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.remove("show"), 2400);
 }
 
 function escapeHtml(text) {
@@ -335,7 +494,7 @@ function renderOptions(customer) {
   });
 }
 
-function answer(button) {
+async function answer(button) {
   if (!state.current || state.answered) return;
   state.answered = true;
   const selected = button.dataset.type;
@@ -356,14 +515,8 @@ function answer(button) {
     stats.streak = 0;
   }
   stats.score += delta;
-  stats.history.unshift({
-    customer: state.current.name,
-    type: state.current.type,
-    selected,
-    correct,
-    delta,
-    time: new Date().toISOString()
-  });
+  normalizeStats(stats);
+  stats.history.unshift({ customer: state.current.name, type: state.current.type, selected, correct, delta, time: new Date().toISOString() });
   stats.history = stats.history.slice(0, 50);
 
   document.querySelectorAll(".option-btn").forEach((option) => {
@@ -380,13 +533,13 @@ function answer(button) {
 
   if (correct) {
     fireConfetti();
-    if (stats.streak >= 2) showToast(`🔥 ${stats.streak}连胜！洞察力正在升级`);
+    if (stats.streak >= 2) showToast(`🔥 ${stats.streak}连胜！称号：${stats.title}`);
   } else {
     showToast("别急，高手也是从误判中练出来的。");
   }
 
-  saveStats(stats);
-  renderLeaderboard();
+  await pushStats(stats);
+  renderLeaderboard(true);
   renderAnalysis(state.current);
   renderMaster(state.current);
 }
@@ -437,34 +590,55 @@ function fireConfetti() {
   }
 }
 
-function startGame() {
+async function startGame() {
   const name = $("playerName").value.trim();
-  if (!name) {
+  const store = $("storeName").value.trim();
+  if (!name || !store) {
     $("loginTip").classList.add("show");
-    $("playerName").focus();
+    (!name ? $("playerName") : $("storeName")).focus();
     return;
   }
   state.playerName = name;
+  state.storeName = store;
   localStorage.setItem("pg_player_name", name);
+  localStorage.setItem("pg_store_name", store);
   $("loginPage").classList.add("hidden");
   $("gamePage").classList.remove("hidden");
   const stats = getStats();
-  saveStats(stats);
+  await pushStats(stats);
   renderLeaderboard();
-  showToast(`${name}，欢迎解锁顾客人格！`);
+  showToast(`${name}，欢迎代表 ${store} 解锁顾客人格！`);
 }
 
-function boot() {
-  $("startBtn").addEventListener("click", startGame);
-  $("playerName").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") startGame();
+function setupTabs() {
+  document.querySelectorAll(".board-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      activeBoard = tab.dataset.board;
+      document.querySelectorAll(".board-tab").forEach((item) => item.classList.toggle("active", item === tab));
+      renderLeaderboard(true);
+    });
   });
+}
+
+async function boot() {
+  $("startBtn").addEventListener("click", startGame);
+  $("playerName").addEventListener("keydown", (event) => { if (event.key === "Enter") startGame(); });
+  $("storeName").addEventListener("keydown", (event) => { if (event.key === "Enter") startGame(); });
   $("playerName").addEventListener("input", () => $("loginTip").classList.remove("show"));
+  $("storeName").addEventListener("input", () => $("loginTip").classList.remove("show"));
   $("generateBtn").addEventListener("click", generateCustomer);
+  setupTabs();
 
   if (state.playerName) $("playerName").value = state.playerName;
+  if (state.storeName) $("storeName").value = state.storeName;
   renderPlayer();
   renderLeaderboard();
+  await initFirebase();
 }
 
 boot();
+
+
+
+
+
